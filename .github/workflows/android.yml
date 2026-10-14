@@ -60,7 +60,8 @@ jobs:
           set -o pipefail
           if ! cargo test -p photocraft-ui-egui --lib touch_controls 2>&1 | tee touch-tests.log; then
             # The failure as an annotation, readable without the full log.
-            msg=$(grep -E -A12 "^error|panicked|^---- " touch-tests.log | head -120 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+            msg=$(sed 's/\x1b\[[0-9;]*[mK]//g' touch-tests.log | grep -v -E "^ *(Compiling|Downloaded|Downloading|Checking) " | grep -E -A14 "error|panicked|FAILED|^---- " | head -150 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+            [ -n "$msg" ] || msg=$(sed 's/\x1b\[[0-9;]*[mK]//g' touch-tests.log | tail -60 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
             echo "::error title=touch controls tests::${msg}"
             exit 1
           fi
