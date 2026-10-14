@@ -80,7 +80,8 @@ impl AndroidShell {
 
     /// Shows the soft keyboard while a text field has focus, and hides it after.
     fn sync_keyboard(&mut self, ctx: &egui::Context) {
-        let wanted = ctx.wants_keyboard_input();
+        // A focused text field, not any focused widget: a tapped button must not bring it up.
+        let wanted = ctx.text_edit_focused();
         if wanted != self.keyboard_visible {
             self.keyboard_visible = wanted;
             jni_bridge::set_keyboard_visible(wanted);
