@@ -758,6 +758,10 @@ pub struct PhotocraftApp {
     /// Phones and small tablets: switch to the compact layout (`mobile`). The Android app turns
     /// it on; desktop and web keep the desktop layout.
     pub compact_layout: mobile::CompactLayout,
+    /// The scale (pixels per point) Preferences › Interface › UI Scaling › Auto uses instead of
+    /// the window system's. The Android app sets it from the screen density, a little larger on
+    /// phones for touch, as winit's scale there can stay at 1.
+    pub auto_ui_scale: Option<f32>,
     /// Background job bookkeeping: opening tabs, control replies waiting on a job.
     pub jobs: jobs_ui::JobsUi,
     #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
@@ -890,6 +894,7 @@ impl PhotocraftApp {
             stylus: Default::default(),
             background_jobs: false,
             compact_layout: mobile::CompactLayout::Off,
+            auto_ui_scale: None,
             jobs: Default::default(),
             #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
             live_tokens: theme::live::LiveTokens::from_env(),

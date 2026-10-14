@@ -13,7 +13,7 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock, PoisonError};
 
 use jni::objects::{JClass, JIntArray, JObject, JObjectArray, JString, JValue};
-use jni::sys::{jboolean, jint};
+use jni::sys::{jboolean, jfloat, jint};
 use jni::{JNIEnv, JavaVM};
 use photocraft_ui_egui::{FileDialogAnswer, FileDialogReply, Inbox};
 use winit::platform::android::activity::AndroidApp;
@@ -28,6 +28,24 @@ static INBOX: OnceLock<Inbox> = OnceLock::new();
 /// The open picker's reply and whether it asked for several files.
 static PENDING_OPEN: Mutex<Option<(FileDialogReply, bool)>> = Mutex::new(None);
 static SAVES: Mutex<Vec<SaveOutcome>> = Mutex::new(Vec::new());
+static DISPLAY: Mutex<Option<Display>> = Mutex::new(None);
+
+/// The screen as Java last reported it (`nativeDisplayChanged`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Display {
+    /// Android's density: physical pixels per dp (1 dp = 1/160 inch).
+    pub density: f32,
+    /// The window's smallest side in dp (under 600: a phone).
+    pub smallest_width_dp: i32,
+    /// Pixels at each edge covered by the status bar, navigation bar or a camera cutout:
+    /// left, top, right, bottom.
+    pub insets_px: [f32; 4],
+}
+
+/// The latest screen report, once Java has sent one.
+pub fn display() -> Option<Display> {
+    *DISPLAY.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// How a save handed to the system picker ended.
 pub enum SaveOutcome {
@@ -144,7 +162,8 @@ pub fn open_url(url: &str) -> Result<(), String> {
 }
 
 pub fn set_keyboard_visible(visible: bool) {
-    if let Err(e) = with_activity(|env, activity| env.call_method(activity, "setKeyboardVisible", "(Z)V", &[JValue::Bool(jboolean::from(visible))]).map(|_| ())) {
+    if let Err(e) = with_activity(|env, activity| env.call_method(activity, "setKeyboardVisible", "(Z)V", &[JValue::Bool(jboolean::from(visible))]).map(|_| ()))
+    {
         log::warn!("couldn't toggle the soft keyboard: {e}");
     }
 }
@@ -197,6 +216,27 @@ pub extern "system" fn Java_org_photocraft_android_MainActivity_nativeSaveFinish
         (false, Some(error)) => SaveOutcome::Failed(error),
     };
     SAVES.lock().unwrap_or_else(PoisonError::into_inner).push(outcome);
+    repaint();
+}
+
+/// Java (UI thread): the density, the window's smallest width or the system bars / cutout insets
+/// changed (start, rotation, bars shown or hidden).
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_photocraft_android_MainActivity_nativeDisplayChanged<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    density: jfloat,
+    smallest_width_dp: jint,
+    left: jint,
+    top: jint,
+    right: jint,
+    bottom: jint,
+) {
+    let px = |v: jint| v.max(0) as f32;
+    let d = Display { density, smallest_width_dp, insets_px: [px(left), px(top), px(right), px(bottom)] };
+    log::info!("display: {d:?}");
+    *DISPLAY.lock().unwrap_or_else(PoisonError::into_inner) = Some(d);
     repaint();
 }
 

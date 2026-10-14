@@ -5,14 +5,20 @@ import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.database.Cursor;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.provider.OpenableColumns;
+import android.util.DisplayMetrics;
 import android.util.Log;
+import android.view.DisplayCutout;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.inputmethod.InputMethodManager;
@@ -45,6 +51,11 @@ public class MainActivity extends NativeActivity {
     private static native void nativePickCancelled();
     /** {@code message}: the saved name on success, the error on failure, null when cancelled. */
     private static native void nativeSaveFinished(boolean ok, String message);
+    /**
+     * The screen for the UI: density (px per dp), the window's smallest side in dp, and the
+     * pixels at each edge under the system bars or a camera cutout (left, top, right, bottom).
+     */
+    private static native void nativeDisplayChanged(float density, int smallestWidthDp, int left, int top, int right, int bottom);
 
     /** The cache file waiting for the "create document" picker's answer. */
     private String pendingSave;
@@ -52,7 +63,8 @@ public class MainActivity extends NativeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        hideSystemBars();
+        drawEdgeToEdge();
+        watchInsets();
         handleIntent(getIntent());
     }
 
@@ -64,11 +76,12 @@ public class MainActivity extends NativeActivity {
     }
 
     @Override
-    public void onWindowFocusChanged(boolean hasFocus) {
-        super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) {
-            hideSystemBars();
-        }
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // Rotation or a fold: the density, the width and the insets may all have changed.
+        View decor = getWindow().getDecorView();
+        decor.requestApplyInsets();
+        reportDisplay(decor.getRootWindowInsets());
     }
 
     /** Back never closes the app (unsaved documents live in this process): it goes to the background. */
@@ -297,23 +310,75 @@ public class MainActivity extends NativeActivity {
         return last != null ? last : "untitled";
     }
 
-    /** The whole screen for the canvas: status and navigation bars come back with a swipe. */
+    // ---- Screen: edge to edge, with the system bars and cutout reported as insets ----------
+
+    /**
+     * The same layout on every Android version: the window spans the whole screen (Android 15
+     * enforces this anyway), the status and navigation bars stay visible over it, and Rust keeps
+     * the UI out of them with the insets reported below.
+     */
     @SuppressWarnings("deprecation")
-    private void hideSystemBars() {
-        View decor = getWindow().getDecorView();
+    private void drawEdgeToEdge() {
+        Window window = getWindow();
+        window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            WindowManager.LayoutParams lp = window.getAttributes();
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            window.setAttributes(lp);
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            WindowInsetsController controller = decor.getWindowInsetsController();
-            if (controller != null) {
-                controller.hide(WindowInsets.Type.systemBars());
-                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-            }
+            window.setDecorFitsSystemWindows(false);
         } else {
-            decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                    | View.SYSTEM_UI_FLAG_FULLSCREEN
-                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                    | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+            window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+        }
+        // Dark bars with light icons, like the app's chrome.
+        window.setStatusBarColor(Color.BLACK);
+        window.setNavigationBarColor(Color.BLACK);
+    }
+
+    private void watchInsets() {
+        View decor = getWindow().getDecorView();
+        decor.setOnApplyWindowInsetsListener((view, insets) -> {
+            reportDisplay(insets);
+            return view.onApplyWindowInsets(insets);
+        });
+        decor.requestApplyInsets();
+    }
+
+    @SuppressWarnings("deprecation")
+    private void reportDisplay(WindowInsets insets) {
+        int left = 0, top = 0, right = 0, bottom = 0;
+        if (insets != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                android.graphics.Insets i = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                left = i.left;
+                top = i.top;
+                right = i.right;
+                bottom = i.bottom;
+            } else {
+                left = insets.getSystemWindowInsetLeft();
+                top = insets.getSystemWindowInsetTop();
+                right = insets.getSystemWindowInsetRight();
+                bottom = insets.getSystemWindowInsetBottom();
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    DisplayCutout cutout = insets.getDisplayCutout();
+                    if (cutout != null) {
+                        left = Math.max(left, cutout.getSafeInsetLeft());
+                        top = Math.max(top, cutout.getSafeInsetTop());
+                        right = Math.max(right, cutout.getSafeInsetRight());
+                        bottom = Math.max(bottom, cutout.getSafeInsetBottom());
+                    }
+                }
+            }
+        }
+        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        int smallest = getResources().getConfiguration().smallestScreenWidthDp;
+        try {
+            nativeDisplayChanged(metrics.density, smallest, left, top, right, bottom);
+        } catch (UnsatisfiedLinkError e) {
+            Log.w(TAG, "native library not ready for the display report", e);
         }
     }
 }

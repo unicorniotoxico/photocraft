@@ -10,7 +10,7 @@
         android:hasCode="true"
         android:largeHeap="true"
         android:allowBackup="false"
-        android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
         <!-- configChanges: rotating, folding or attaching a keyboard must not recreate the activity
              (that would restart the native app and lose open documents). -->

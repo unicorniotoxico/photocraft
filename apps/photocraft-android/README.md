@@ -30,6 +30,9 @@ directly (`adb install -r …`). Sign with your own key before distributing it.
   asks where to put them.
 - **Pen**: pressure comes through winit's touch force, read by `stylus.rs` as on Windows.
 - **Pinch** zooms the canvas (egui's touch `zoom_delta`); two fingers drag it.
+- **Screen fit**: the window spans the screen edge to edge and the UI keeps out of the status
+  bar, navigation bar and camera cutout (Java reports their insets, egui's safe area). The UI is
+  sized in dp from the screen density (15 % larger on phones), not winit's scale factor.
 - **Phone layout**: portrait or landscape (rotation follows the system setting). On a phone, or a
   tablet in portrait, the UI switches to the compact layout (`photocraft_ui_egui::mobile`): menus
   in one row that scrolls sideways, Undo / Redo / Fit and the panel groups in a bottom bar, and

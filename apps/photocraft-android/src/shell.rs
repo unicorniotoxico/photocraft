@@ -93,7 +93,21 @@ impl AndroidShell {
 }
 
 impl eframe::App for AndroidShell {
+    /// Keeps the UI out of the status bar, navigation bar and camera cutout: egui lays out the
+    /// root panels, windows and popups inside the screen minus these insets.
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        if let Some(d) = jni_bridge::display() {
+            let ppp = ctx.pixels_per_point();
+            let ppp = if ppp.is_finite() && ppp > 0.0 { ppp } else { 1.0 };
+            let [left, top, right, bottom] = d.insets_px.map(|v| v / ppp);
+            raw_input.safe_area_insets = Some(egui::SafeAreaInsets(egui::epaint::MarginF32 { left, right, top, bottom }));
+        }
+    }
+
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        if let Some(d) = jni_bridge::display() {
+            self.app.auto_ui_scale = crate::ui_scale(d.density, d.smallest_width_dp);
+        }
         self.report_saves();
         self.app.logic(ctx, frame);
     }

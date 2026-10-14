@@ -374,7 +374,11 @@ fn display_scale(pref: prefs::UiScale, native: Option<f32>) -> f32 {
 fn sync_display_scale(app: &PhotocraftApp, ctx: &egui::Context) {
     let native = ctx.native_pixels_per_point();
     let native_scale = native.filter(|v| v.is_finite() && *v > 0.0).unwrap_or(1.0);
-    let scale = display_scale(app.session.prefs().interface.ui_scale, native);
+    let pref = app.session.prefs().interface.ui_scale;
+    let scale = match app.auto_ui_scale.filter(|s| s.is_finite() && *s > 0.0) {
+        Some(auto) if pref == prefs::UiScale::Auto => auto,
+        _ => display_scale(pref, native),
+    };
     ctx.set_zoom_factor(scale / native_scale);
 }
 
