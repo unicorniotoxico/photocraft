@@ -18,6 +18,18 @@ android {
         }
     }
 
+    // One fixed debug key for every build (CI runners would otherwise make a new one each time,
+    // and Android refuses to update an app signed with a different key: "package conflicts").
+    // It is a public debug key: fine for sideloaded test builds, never for a store release.
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
