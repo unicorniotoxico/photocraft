@@ -38,9 +38,6 @@ pub fn run(android: AndroidApp) {
             // with progress and Cancel, so the UI keeps answering (and Android doesn't report it
             // as not responding).
             app.background_jobs = true;
-            // Phones (and tablets in portrait) get the compact layout; tablets in landscape keep the
-            // desktop one. It follows the window, so rotating switches between them.
-            app.compact_layout = photocraft_ui_egui::mobile::CompactLayout::Auto;
             if let Some(rs) = cc.wgpu_render_state.clone() {
                 let info = rs.adapter.get_info();
                 log::info!("PhotoCraft: wgpu {:?} on {} ({:?})", info.backend, info.name, info.device_type);
@@ -93,8 +90,8 @@ impl AndroidShell {
 }
 
 impl eframe::App for AndroidShell {
-    /// Keeps the UI out of the status bar, navigation bar and camera cutout: egui lays out the
-    /// root panels, windows and popups inside the screen minus these insets.
+    /// The status bar, navigation bar and camera cutout as egui's safe area: windows and popups
+    /// stay inside it, and `ui` lays the app out in it.
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         if let Some(d) = jni_bridge::display() {
             let ppp = ctx.pixels_per_point();
@@ -105,15 +102,17 @@ impl eframe::App for AndroidShell {
     }
 
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        if let Some(d) = jni_bridge::display() {
-            self.app.auto_ui_scale = crate::ui_scale(d.density, d.smallest_width_dp);
-        }
         self.report_saves();
         self.app.logic(ctx, frame);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
-        self.app.ui(ui, frame);
+        // The root Ui spans the whole screen, safe area or not: lay the app out in the part the
+        // system bars and the cutout leave free, so nothing is drawn under them.
+        let safe = ui.ctx().content_rect();
+        let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(safe));
+        inner.set_clip_rect(safe);
+        self.app.ui(&mut inner, frame);
         self.sync_keyboard(ui.ctx());
     }
 }

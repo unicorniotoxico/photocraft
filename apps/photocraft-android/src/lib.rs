@@ -42,17 +42,6 @@ pub fn mime_for(name: &str) -> &'static str {
     }
 }
 
-/// Pixels per point for the UI: Android's density (so 1 point = 1 dp, the size Android apps are
-/// designed in), 15 % larger on phones (smallest side under 600 dp), whose controls are tapped
-/// with a finger rather than a pen. `None` for a density Java couldn't read.
-pub fn ui_scale(density: f32, smallest_width_dp: i32) -> Option<f32> {
-    if !density.is_finite() || density <= 0.0 {
-        return None;
-    }
-    let phone = smallest_width_dp > 0 && smallest_width_dp < 600;
-    Some(if phone { density * 1.15 } else { density })
-}
-
 /// The last component of a path or suggested name: what the save picker offers as the file name.
 pub fn display_name(path: &str) -> String {
     std::path::Path::new(path).file_name().map_or_else(|| path.to_string(), |n| n.to_string_lossy().into_owned())
@@ -68,16 +57,6 @@ mod tests {
         assert_eq!(mime_for("art.psd"), "image/vnd.adobe.photoshop");
         assert_eq!(mime_for("doc.pcraft"), "application/octet-stream");
         assert_eq!(mime_for("no-extension"), "application/octet-stream");
-    }
-
-    #[test]
-    fn ui_scale_follows_the_density_and_grows_on_phones() {
-        assert_eq!(ui_scale(2.0, 800), Some(2.0));
-        assert!(ui_scale(2.75, 392).is_some_and(|s| (s - 2.75 * 1.15).abs() < 1e-5));
-        assert_eq!(ui_scale(0.0, 392), None);
-        assert_eq!(ui_scale(f32::NAN, 392), None);
-        // An unknown width counts as a tablet: no boost.
-        assert_eq!(ui_scale(3.0, 0), Some(3.0));
     }
 
     #[test]
