@@ -72,15 +72,63 @@ pub struct Button {
     /// An icon from `assets/icons`, drawn instead of the label.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
-    /// Centre, as fractions of the usable screen (0..1).
-    pub x: f32,
-    pub y: f32,
+    /// The screen corner it keeps its distance to, so it stays put when the screen rotates.
+    #[serde(default)]
+    pub corner: Corner,
+    /// Its centre's distance (points) from that corner, horizontally and vertically.
+    #[serde(default)]
+    pub dx: f32,
+    #[serde(default)]
+    pub dy: f32,
     /// Diameter in points.
     pub size: f32,
     /// A tap latches it on, the next tap releases it (keys, modifiers, click).
     #[serde(default)]
     pub toggle: bool,
 }
+
+/// The screen corner a button is placed from.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Corner {
+    #[default]
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+impl Button {
+    /// Its centre on `screen`, kept far enough inside that the whole button shows.
+    pub fn center(&self, screen: Rect) -> Pos2 {
+        let (x, y) = match self.corner {
+            Corner::TopLeft => (screen.left() + self.dx, screen.top() + self.dy),
+            Corner::TopRight => (screen.right() - self.dx, screen.top() + self.dy),
+            Corner::BottomLeft => (screen.left() + self.dx, screen.bottom() - self.dy),
+            Corner::BottomRight => (screen.right() - self.dx, screen.bottom() - self.dy),
+        };
+        let r = self.size / 2.0;
+        let clamp = |v: f32, lo: f32, hi: f32| if lo <= hi { v.clamp(lo, hi) } else { (lo + hi) / 2.0 };
+        pos2(clamp(x, screen.left() + r, screen.right() - r), clamp(y, screen.top() + r, screen.bottom() - r))
+    }
+
+    /// Places its centre at `p`, measured from the nearest corner of `screen`.
+    pub fn set_center(&mut self, p: Pos2, screen: Rect) {
+        let right = p.x > screen.center().x;
+        let bottom = p.y > screen.center().y;
+        self.corner = match (right, bottom) {
+            (false, false) => Corner::TopLeft,
+            (true, false) => Corner::TopRight,
+            (false, true) => Corner::BottomLeft,
+            (true, true) => Corner::BottomRight,
+        };
+        self.dx = if right { screen.right() - p.x } else { p.x - screen.left() };
+        self.dy = if bottom { screen.bottom() - p.y } else { p.y - screen.top() };
+    }
+}
+
+/// The default layout's revision: a saved config from an older one gets the new default buttons.
+const LAYOUT: u32 = 2;
 
 /// Everything the user sets; saved by the shell as JSON.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -95,32 +143,42 @@ pub struct Config {
     /// Cursor movement per point of finger movement.
     pub sensitivity: f32,
     pub buttons: Vec<Button>,
+    /// The default layout's revision this config was made with ([`LAYOUT`]); a file without it
+    /// predates revisions.
+    #[serde(default)]
+    pub layout: u32,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        let place = |p: Preset, x: f32, y: f32| p.button(x, y);
         let presets = presets();
         let find = |key: &str| presets.iter().find(|p| p.key == key).cloned();
-        let layout: [(&str, f32, f32); 11] = [
-            ("settings", 0.78, 0.30),
-            ("undo", 0.92, 0.30),
-            ("redo", 0.92, 0.39),
-            ("space", 0.78, 0.39),
-            ("cursor", 0.92, 0.48),
-            ("ctrl", 0.78, 0.48),
-            ("click", 0.92, 0.57),
-            ("shift", 0.78, 0.57),
-            ("rightClick", 0.92, 0.66),
-            ("alt", 0.78, 0.66),
-            ("fit", 0.92, 0.75),
+        // Spread over three corners, clear of the toolbar (left), the menus and options bar (top),
+        // the status bar and the Layers panel's footer (bottom right): the modifiers under the
+        // left thumb, clicks and the cursor under the right one, history and settings at the top.
+        // 50 pt buttons on a 64 pt pitch, so they never touch; a 360 pt wide phone fits all three
+        // groups side by side.
+        use Corner::{BottomLeft as BL, BottomRight as BR, TopRight as TR};
+        let layout: [(&str, Corner, f32, f32); 11] = [
+            ("settings", TR, 36.0, 110.0),
+            ("redo", TR, 100.0, 110.0),
+            ("undo", TR, 164.0, 110.0),
+            ("shift", BL, 82.0, 62.0),
+            ("ctrl", BL, 146.0, 62.0),
+            ("alt", BL, 82.0, 126.0),
+            ("space", BL, 146.0, 126.0),
+            ("click", BR, 40.0, 95.0),
+            ("rightClick", BR, 104.0, 95.0),
+            ("cursor", BR, 40.0, 159.0),
+            ("fit", BR, 104.0, 159.0),
         ];
         Self {
             visible: true,
             opacity: 0.6,
             cursor_mode: false,
             sensitivity: 1.5,
-            buttons: layout.iter().filter_map(|(k, x, y)| find(k).map(|p| place(p, *x, *y))).collect(),
+            buttons: layout.iter().filter_map(|(k, c, dx, dy)| find(k).map(|p| p.button(*c, *dx, *dy))).collect(),
+            layout: LAYOUT,
         }
     }
 }
@@ -131,9 +189,15 @@ impl Config {
         let fix = |v: f32, lo: f32, hi: f32, d: f32| if v.is_finite() { v.clamp(lo, hi) } else { d };
         self.opacity = fix(self.opacity, 0.1, 1.0, 0.6);
         self.sensitivity = fix(self.sensitivity, 0.2, 5.0, 1.5);
+        if self.layout < LAYOUT {
+            // Made with an older default layout (whose buttons crowded together): start over.
+            let fresh = Config::default();
+            self.buttons = fresh.buttons;
+            self.layout = LAYOUT;
+        }
         for b in &mut self.buttons {
-            b.x = fix(b.x, 0.0, 1.0, 0.5);
-            b.y = fix(b.y, 0.0, 1.0, 0.5);
+            b.dx = fix(b.dx, 0.0, 10_000.0, 60.0);
+            b.dy = fix(b.dy, 0.0, 10_000.0, 60.0);
             b.size = fix(b.size, 28.0, 120.0, 52.0);
             if !b.action.can_toggle() {
                 b.toggle = false;
@@ -142,7 +206,7 @@ impl Config {
         if !self.buttons.iter().any(|b| b.action == Action::Settings)
             && let Some(p) = presets().into_iter().find(|p| p.key == "settings")
         {
-            self.buttons.push(p.button(0.78, 0.30));
+            self.buttons.push(p.button(Corner::TopRight, 36.0, 110.0));
         }
         self
     }
@@ -162,8 +226,17 @@ pub struct Preset {
 }
 
 impl Preset {
-    fn button(&self, x: f32, y: f32) -> Button {
-        Button { action: self.action.clone(), label: self.short.to_string(), icon: self.icon.map(str::to_string), x, y, size: 52.0, toggle: self.toggle }
+    fn button(&self, corner: Corner, dx: f32, dy: f32) -> Button {
+        Button {
+            action: self.action.clone(),
+            label: self.short.to_string(),
+            icon: self.icon.map(str::to_string),
+            corner,
+            dx,
+            dy,
+            size: 50.0,
+            toggle: self.toggle,
+        }
     }
 }
 
@@ -319,7 +392,7 @@ impl TouchControls {
             .iter()
             .enumerate()
             .filter(|(_, b)| self.shown(b))
-            .map(|(i, b)| (i, Rect::from_center_size(pos2(screen.left() + b.x * screen.width(), screen.top() + b.y * screen.height()), Vec2::splat(b.size))))
+            .map(|(i, b)| (i, Rect::from_center_size(b.center(screen), Vec2::splat(b.size))))
             .collect()
     }
 
@@ -656,8 +729,8 @@ impl TouchControls {
             && screen.width() > 0.0
             && screen.height() > 0.0
         {
-            b.x = (b.x + d.x / screen.width()).clamp(0.0, 1.0);
-            b.y = (b.y + d.y / screen.height()).clamp(0.0, 1.0);
+            let to = b.center(screen) + d;
+            b.set_center(to, screen);
             self.dirty = true;
         }
         if self.cursor_active()
@@ -749,7 +822,9 @@ impl TouchControls {
                         if ui.button(l("Add", "Agregar")).clicked()
                             && let Some(p) = presets.get(self.add_choice)
                         {
-                            self.config.buttons.push(p.button(0.5, 0.5));
+                            let mut b = p.button(Corner::TopLeft, 0.0, 0.0);
+                            b.set_center(screen.center(), screen);
+                            self.config.buttons.push(b);
                             self.editing = true;
                         }
                     });
@@ -822,11 +897,14 @@ mod tests {
     }
 
     fn controls(buttons: Vec<Button>, cursor_mode: bool) -> TouchControls {
-        TouchControls::new(Config { visible: true, opacity: 0.6, cursor_mode, sensitivity: 2.0, buttons })
+        TouchControls::new(Config { visible: true, opacity: 0.6, cursor_mode, sensitivity: 2.0, buttons, layout: LAYOUT })
     }
 
+    /// A button centred at (`x`, `y`) as fractions of [`SCREEN`].
     fn button(action: Action, x: f32, y: f32, toggle: bool) -> Button {
-        Button { action, label: "b".into(), icon: None, x, y, size: 50.0, toggle }
+        let mut b = Button { action, label: "b".into(), icon: None, corner: Corner::TopLeft, dx: 0.0, dy: 0.0, size: 50.0, toggle };
+        b.set_center(pos2(x * SCREEN.width(), y * SCREEN.height()), SCREEN);
+        b
     }
 
     fn frame(tc: &mut TouchControls, now: f64, events: Vec<Event>) -> RawInput {
@@ -836,7 +914,7 @@ mod tests {
     }
 
     fn center(b: &Button) -> Pos2 {
-        pos2(b.x * SCREEN.width(), b.y * SCREEN.height())
+        b.center(SCREEN)
     }
 
     #[test]
@@ -932,6 +1010,40 @@ mod tests {
         frame(&mut tc, 0.05, vec![touch(2, TouchPhase::End, pos2(220.0, 400.0))]);
         let raw = frame(&mut tc, 0.1, pointer_touch(1, TouchPhase::End, pos2(100.0, 400.0)));
         assert!(!raw.events.iter().any(|e| matches!(e, Event::PointerButton { .. })));
+    }
+
+    #[test]
+    fn default_buttons_never_overlap_on_a_phone_in_either_orientation() {
+        for size in [vec2(360.0, 640.0), vec2(412.0, 860.0), vec2(640.0, 360.0), vec2(860.0, 412.0), vec2(1280.0, 800.0)] {
+            let screen = Rect::from_min_size(pos2(0.0, 24.0), size);
+            let c = Config::default();
+            let rects: Vec<Rect> = c.buttons.iter().map(|b| Rect::from_center_size(b.center(screen), Vec2::splat(b.size))).collect();
+            for (i, a) in rects.iter().enumerate() {
+                assert!(screen.contains_rect(*a), "{size:?}: button {i} off screen");
+                for (j, b) in rects.iter().enumerate().skip(i + 1) {
+                    assert!(!a.expand(4.0).intersects(*b), "{size:?}: buttons {i} and {j} overlap");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_dragged_button_keeps_its_corner_distance_when_the_screen_rotates() {
+        let portrait = Rect::from_min_size(Pos2::ZERO, vec2(400.0, 800.0));
+        let landscape = Rect::from_min_size(Pos2::ZERO, vec2(800.0, 400.0));
+        let mut b = button(Action::RightClick, 0.5, 0.5, false);
+        b.set_center(pos2(350.0, 700.0), portrait);
+        assert_eq!(b.corner, Corner::BottomRight);
+        assert_eq!(b.center(portrait), pos2(350.0, 700.0));
+        assert_eq!(b.center(landscape), pos2(750.0, 300.0));
+    }
+
+    #[test]
+    fn an_old_crowded_layout_is_replaced_by_the_new_default() {
+        let old: Config = serde_json::from_str(r#"{"visible":true,"opacity":0.6,"cursor_mode":false,"sensitivity":1.5,"buttons":[{"action":{"kind":"settings"},"label":"⚙","x":0.78,"y":0.3,"size":52.0}]}"#).unwrap_or_default();
+        let fixed = old.sanitized();
+        assert_eq!(fixed.layout, LAYOUT);
+        assert_eq!(fixed.buttons, Config::default().buttons);
     }
 
     #[test]
