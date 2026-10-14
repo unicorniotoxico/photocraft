@@ -32,6 +32,10 @@ directly (`adb install -r …`). Sign with your own key before distributing it.
 - **Pinch** zooms the canvas (egui's touch `zoom_delta`); two fingers drag it.
 - **Screen fit**: the window spans the screen edge to edge and the UI keeps out of the status
   bar, navigation bar and camera cutout (Java reports their insets, egui's safe area).
+- **Touch controls** (`photocraft_ui_egui::touch_controls`): floating buttons over the desktop UI
+  (commands, keys, Ctrl/Shift/Alt held or latched, click, right click) and a cursor mode where the
+  screen works as a trackpad with adjustable sensitivity. The gear button opens their settings:
+  move, resize, add, remove and reassign buttons. Saved in `touch_controls.json` in the app's data.
 - **Layout**: the desktop layout, portrait or landscape (rotation follows the system setting).
   `photocraft_ui_egui::mobile` has a compact phone layout (`CompactLayout::Auto`), off for now.
 - Preferences and brush presets persist in the app's private storage.

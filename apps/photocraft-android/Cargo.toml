@@ -38,4 +38,5 @@ eframe = { workspace = true, features = ["wgpu", "android-native-activity"] }
 # AndroidApp (the activity handle eframe runs in); pinned to the version eframe already locks.
 winit = { version = "=0.30.13", default-features = false, features = ["android-native-activity", "rwh_06"] }
 android_logger = "0.15"
+serde_json = { workspace = true }
 jni = "0.21"

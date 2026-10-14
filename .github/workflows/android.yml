@@ -55,6 +55,9 @@ jobs:
       - name: Host unit tests (Android crate)
         run: cargo test -p photocraft-android --lib
 
+      - name: Host unit tests (touch controls)
+        run: cargo test -p photocraft-ui-egui --lib touch_controls
+
       - name: Build APK
         run: apps/photocraft-android/build.sh
 

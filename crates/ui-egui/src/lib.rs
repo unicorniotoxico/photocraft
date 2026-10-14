@@ -128,6 +128,7 @@ pub mod menu_catalog;
 pub mod menu_nav;
 pub mod menus;
 pub mod mobile;
+pub mod touch_controls;
 pub mod monitor_status;
 pub mod move_box;
 pub mod move_hover;

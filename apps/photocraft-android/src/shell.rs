@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use photocraft_codecs::{ChannelLayout, EncodeOptions, Image};
 use photocraft_doc::Document;
 use photocraft_ui_egui::theme::ThemeKind;
+use photocraft_ui_egui::touch_controls::{Config, TouchControls};
 use photocraft_ui_egui::{FileDialogAnswer, FileDialogRequest, PhotocraftApp, Services, i18n};
 use winit::platform::android::activity::AndroidApp;
 
@@ -24,6 +25,8 @@ pub fn run(android: AndroidApp) {
 
     // Brush presets load in the background; the app attaches them when they arrive.
     let presets = data_dir.as_ref().map(|d| photocraft_engine::preset_store::open_dir_async(d.join("presets")));
+    let touch_file = data_dir.as_ref().map(|d| d.join("touch_controls.json"));
+    let touch = TouchControls::new(touch_file.as_deref().and_then(load_touch_config).unwrap_or_default());
 
     let result = eframe::run_native(
         "PhotoCraft",
@@ -50,7 +53,7 @@ pub fn run(android: AndroidApp) {
                 }
             }
             jni_bridge::set_repaint(cc.egui_ctx.clone());
-            Ok(Box::new(AndroidShell { app, keyboard_visible: false }))
+            Ok(Box::new(AndroidShell { app, keyboard_visible: false, touch, touch_file }))
         }),
     );
     if let Err(e) = result {
@@ -62,6 +65,9 @@ struct AndroidShell {
     app: PhotocraftApp,
     /// What the soft keyboard was last asked to do, so Java is called only when it changes.
     keyboard_visible: bool,
+    /// The on-screen buttons and the cursor mode, and where their settings are saved.
+    touch: TouchControls,
+    touch_file: Option<PathBuf>,
 }
 
 impl AndroidShell {
@@ -99,6 +105,7 @@ impl eframe::App for AndroidShell {
             let [left, top, right, bottom] = d.insets_px.map(|v| v / ppp);
             raw_input.safe_area_insets = Some(egui::SafeAreaInsets(egui::epaint::MarginF32 { left, right, top, bottom }));
         }
+        self.touch.process_input(ctx, raw_input);
     }
 
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
@@ -112,7 +119,21 @@ impl eframe::App for AndroidShell {
         let safe = ui.ctx().content_rect();
         let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(safe));
         inner.set_clip_rect(safe);
+        self.touch.run_queued(&mut self.app, ui.ctx());
         self.app.ui(&mut inner, frame);
+        self.touch.show(ui.ctx());
+        if self.touch.take_dirty(ui.ctx())
+            && let Some(path) = &self.touch_file
+        {
+            match serde_json::to_string_pretty(&self.touch.config) {
+                Ok(text) => {
+                    if let Err(e) = write_atomically(path, text.as_bytes()) {
+                        log::warn!("couldn't save the touch controls: {e}");
+                    }
+                }
+                Err(e) => log::warn!("couldn't encode the touch controls: {e}"),
+            }
+        }
         self.sync_keyboard(ui.ctx());
     }
 }
@@ -162,6 +183,18 @@ fn services(data_dir: Option<&Path>) -> Services {
             None => Err("no app data directory".into()),
         })),
         ..Default::default()
+    }
+}
+
+/// The saved touch controls, if the file exists and reads.
+fn load_touch_config(path: &Path) -> Option<Config> {
+    let text = std::fs::read_to_string(path).ok()?;
+    match serde_json::from_str(&text) {
+        Ok(c) => Some(c),
+        Err(e) => {
+            log::warn!("{}: {e}; using the default touch controls", path.display());
+            None
+        }
     }
 }
 
