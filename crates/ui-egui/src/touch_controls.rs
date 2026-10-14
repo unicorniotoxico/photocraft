@@ -284,6 +284,9 @@ pub struct TouchControls {
     pending: Vec<Event>,
     /// The add-button list's choice in the settings.
     add_choice: usize,
+    /// Modifiers the keyboard reports, and what egui was last told (those plus the buttons').
+    platform_mods: Modifiers,
+    sent_mods: Modifiers,
 }
 
 impl TouchControls {
@@ -442,6 +445,18 @@ impl TouchControls {
                     out.push(ev);
                 }
                 Event::PointerMoved(_) | Event::PointerButton { .. } | Event::PointerGone if skip_pointer => {}
+                // Merged with the buttons' modifiers below.
+                Event::ModifiersChanged(m) => {
+                    skip_pointer = false;
+                    self.platform_mods = m;
+                }
+                Event::WindowFocused(false) => {
+                    // egui drops every key and modifier when the window loses focus.
+                    skip_pointer = false;
+                    self.platform_mods = Modifiers::NONE;
+                    self.sent_mods = Modifiers::NONE;
+                    out.push(ev);
+                }
                 other => {
                     skip_pointer = false;
                     out.push(other);
@@ -449,8 +464,13 @@ impl TouchControls {
             }
         }
         let m = self.modifiers();
+        let mut all = self.platform_mods;
+        all |= m;
+        if all != self.sent_mods {
+            self.sent_mods = all;
+            out.insert(0, Event::ModifiersChanged(all));
+        }
         if m != Modifiers::NONE {
-            raw.modifiers |= m;
             for ev in &mut out {
                 match ev {
                     Event::Key { modifiers, .. } | Event::PointerButton { modifiers, .. } | Event::MouseWheel { modifiers, .. } => *modifiers |= m,
@@ -841,12 +861,17 @@ mod tests {
         let mut tc = controls(vec![ctrl, button(Action::Settings, 0.1, 0.1, false)], false);
         frame(&mut tc, 0.0, pointer_touch(1, TouchPhase::Start, at));
         // A second finger is not egui-winit's pointer touch; a key typed meanwhile is.
+        assert!(tc.sent_mods.ctrl && tc.sent_mods.command);
         let raw = frame(&mut tc, 0.1, vec![touch(2, TouchPhase::Start, pos2(20.0, 700.0)), key_event(Key::Z, true)]);
-        assert!(raw.modifiers.ctrl && raw.modifiers.command);
         assert!(raw.events.iter().any(|e| matches!(e, Event::Key { modifiers, .. } if modifiers.ctrl)));
-        frame(&mut tc, 0.2, pointer_touch(1, TouchPhase::End, at));
+        let raw = frame(&mut tc, 0.2, pointer_touch(1, TouchPhase::End, at));
+        assert!(raw.events.contains(&Event::ModifiersChanged(Modifiers::NONE)));
         let raw = frame(&mut tc, 0.3, vec![key_event(Key::Z, true)]);
-        assert!(!raw.modifiers.ctrl);
+        assert!(raw.events.iter().any(|e| matches!(e, Event::Key { modifiers, .. } if !modifiers.ctrl)));
+        // The keyboard's own Shift is kept alongside a button's Ctrl.
+        frame(&mut tc, 0.4, pointer_touch(3, TouchPhase::Start, at));
+        let raw = frame(&mut tc, 0.5, vec![Event::ModifiersChanged(Modifiers::SHIFT)]);
+        assert!(raw.events.iter().any(|e| matches!(e, Event::ModifiersChanged(m) if m.shift && m.ctrl)));
     }
 
     #[test]
@@ -856,10 +881,12 @@ mod tests {
         let mut tc = controls(vec![shift, button(Action::Settings, 0.1, 0.1, false)], false);
         frame(&mut tc, 0.0, pointer_touch(1, TouchPhase::Start, at));
         frame(&mut tc, 0.1, pointer_touch(1, TouchPhase::End, at));
-        assert!(frame(&mut tc, 0.2, vec![]).modifiers.shift);
+        frame(&mut tc, 0.2, vec![]);
+        assert!(tc.sent_mods.shift);
         frame(&mut tc, 0.3, pointer_touch(2, TouchPhase::Start, at));
         frame(&mut tc, 0.4, pointer_touch(2, TouchPhase::End, at));
-        assert!(!frame(&mut tc, 0.5, vec![]).modifiers.shift);
+        frame(&mut tc, 0.5, vec![]);
+        assert!(!tc.sent_mods.shift);
     }
 
     #[test]
