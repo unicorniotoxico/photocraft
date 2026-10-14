@@ -127,6 +127,7 @@ pub mod mask_trash_prompt;
 pub mod menu_catalog;
 pub mod menu_nav;
 pub mod menus;
+pub mod mobile;
 pub mod monitor_status;
 pub mod move_box;
 pub mod move_hover;
@@ -754,6 +755,9 @@ pub struct PhotocraftApp {
     /// `jobs_ui`). The desktop app turns it on; off (the default), everything runs inline as
     /// before, which tests and scripts rely on.
     pub background_jobs: bool,
+    /// Phones and small tablets: switch to the compact layout (`mobile`). The Android app turns
+    /// it on; desktop and web keep the desktop layout.
+    pub compact_layout: mobile::CompactLayout,
     /// Background job bookkeeping: opening tabs, control replies waiting on a job.
     pub jobs: jobs_ui::JobsUi,
     #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
@@ -885,6 +889,7 @@ impl PhotocraftApp {
             allow_close: false,
             stylus: Default::default(),
             background_jobs: false,
+            compact_layout: mobile::CompactLayout::Off,
             jobs: Default::default(),
             #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
             live_tokens: theme::live::LiveTokens::from_env(),
@@ -1823,19 +1828,27 @@ impl eframe::App for PhotocraftApp {
         // system title bar this is where the document name lives, as the in-app title is hidden.
         panels::sync_window_title(self, &ctx);
         let chrome = !self.ui.view.hides_chrome();
-        if chrome && self.ui.panels.menu_bar {
+        // Phones: menus in a scrolling row, panels in a drawer over the canvas (`mobile`).
+        let compact = chrome && mobile::active(self, &ctx);
+        if compact {
+            mobile::top_bar(self, ui);
+        } else if chrome && self.ui.panels.menu_bar {
             panels::title_bar(self, ui);
+        }
+        if compact {
+            // Before the options bar and the toolbar, so it spans the whole width.
+            mobile::bottom_bar(self, ui);
         }
         if chrome && self.ui.panels.options_bar {
             panels::options_bar(self, ui);
         }
-        if chrome && self.ui.panels.status_bar {
+        if chrome && !compact && self.ui.panels.status_bar {
             panels::status_bar(self, ui);
         }
         if chrome && self.ui.panels.toolbar {
             panels::toolbar(self, ui);
         }
-        if chrome && self.ui.panels.dock {
+        if chrome && !compact && self.ui.panels.dock {
             panels::right_dock(self, ui);
         }
         let t = theme::Tokens::get(&ctx);
@@ -1843,6 +1856,11 @@ impl eframe::App for PhotocraftApp {
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(backdrop)).show(ui, |ui| {
             canvas::document_area(self, ui);
         });
+        if compact {
+            mobile::drawer(self, &ctx);
+        } else if mobile::open_group(&ctx).is_some() {
+            mobile::set_open_group(&ctx, None);
+        }
         panels::properties_window(self, &ctx);
         brush_panel::window(self, &ctx);
         preset_panels::windows(self, &ctx);

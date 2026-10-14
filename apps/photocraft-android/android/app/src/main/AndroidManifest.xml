@@ -18,7 +18,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="fullUser"
             android:resizeableActivity="true"
             android:windowSoftInputMode="stateHidden|adjustPan"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode|fontScale|locale|layoutDirection">

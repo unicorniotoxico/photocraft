@@ -38,6 +38,9 @@ pub fn run(android: AndroidApp) {
             // with progress and Cancel, so the UI keeps answering (and Android doesn't report it
             // as not responding).
             app.background_jobs = true;
+            // Phones (and tablets in portrait) get the compact layout; tablets in landscape keep the
+            // desktop one. It follows the window, so rotating switches between them.
+            app.compact_layout = photocraft_ui_egui::mobile::CompactLayout::Auto;
             if let Some(rs) = cc.wgpu_render_state.clone() {
                 let info = rs.adapter.get_info();
                 log::info!("PhotoCraft: wgpu {:?} on {} ({:?})", info.backend, info.name, info.device_type);

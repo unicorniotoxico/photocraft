@@ -3146,6 +3146,12 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
             }
             _ => {}
         }
+        // A touch screen: two fingers drag the image (the pinch zooms above).
+        if let Some(pan) = crate::mobile::two_finger_pan(&ctx, rect) {
+            let d = xf.unmap_vec(pan) / (view.zoom / ppp);
+            view.center[0] -= d.x;
+            view.center[1] -= d.y;
+        }
         let rotate_trackpad = app.session.prefs().enhanced_controls.rotate_view_with_trackpad;
         if let Some(delta) = crate::rotate_view::trackpad_delta(&ctx, rotate_trackpad) {
             let next = view.rotation + crate::rotate_view::screen_delta(delta, xf.flip);

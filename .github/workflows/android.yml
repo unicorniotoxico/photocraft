@@ -75,7 +75,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          notes="PhotoCraft for Android, built from ${GITHUB_SHA::7} on the android branch. Early alpha: arm64 only, desktop layout in landscape. Signed with a debug key (install by allowing unknown sources)."
+          notes="PhotoCraft for Android, built from ${GITHUB_SHA::7} on the android branch. Early alpha: arm64 only. Phone layout in portrait and landscape. Signed with a debug key (install by allowing unknown sources)."
           gh release delete android-latest --yes --cleanup-tag 2>/dev/null || true
           gh release create android-latest "${{ steps.apk.outputs.path }}" \
             --target "$GITHUB_SHA" --prerelease --title "PhotoCraft Android (latest build)" --notes "$notes"

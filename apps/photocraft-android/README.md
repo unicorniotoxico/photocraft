@@ -29,11 +29,15 @@ directly (`adb install -r …`). Sign with your own key before distributing it.
 - **Save / Export**: the bytes go to the app's cache, then the system "create document" picker
   asks where to put them.
 - **Pen**: pressure comes through winit's touch force, read by `stylus.rs` as on Windows.
-- **Pinch** zooms the canvas (egui's touch `zoom_delta`).
+- **Pinch** zooms the canvas (egui's touch `zoom_delta`); two fingers drag it.
+- **Phone layout**: portrait or landscape (rotation follows the system setting). On a phone, or a
+  tablet in portrait, the UI switches to the compact layout (`photocraft_ui_egui::mobile`): menus
+  in one row that scrolls sideways, Undo / Redo / Fit and the panel groups in a bottom bar, and
+  each panel group in a drawer over the canvas. A tablet in landscape keeps the desktop layout.
 - Preferences and brush presets persist in the app's private storage.
 
 ## Not done yet
 
-- A touch-first layout: the desktop UI is shown as is (landscape; best on tablets).
-- OS clipboard, folder pickers, autosave/recovery, two-finger pan and rotate.
+- Touch-sized controls inside the panels and dialogs (they keep their desktop sizes).
+- OS clipboard, folder pickers, autosave/recovery, two-finger rotate.
 - Text input relies on the soft keyboard sending key events (no IME composition).
