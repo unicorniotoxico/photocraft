@@ -56,7 +56,14 @@ jobs:
         run: cargo test -p photocraft-android --lib
 
       - name: Host unit tests (touch controls)
-        run: cargo test -p photocraft-ui-egui --lib touch_controls
+        run: |
+          set -o pipefail
+          if ! cargo test -p photocraft-ui-egui --lib touch_controls 2>&1 | tee touch-tests.log; then
+            # The failure as an annotation, readable without the full log.
+            msg=$(grep -E -A12 "^error|panicked|^---- " touch-tests.log | head -120 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+            echo "::error title=touch controls tests::${msg}"
+            exit 1
+          fi
 
       - name: Build APK
         run: apps/photocraft-android/build.sh
