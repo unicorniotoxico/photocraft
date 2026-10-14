@@ -1,0 +1,81 @@
+# Builds the Android APK (apps/photocraft-android) and publishes it as the `android-latest`
+# pre-release, so it can be downloaded straight to a phone.
+name: Android APK
+
+on:
+  push:
+    branches: [android]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      NDK_VERSION: 27.2.12479018
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Android SDK packages
+        run: |
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdkmanager" --licenses > /dev/null || true
+          "$sdkmanager" --install "ndk;$NDK_VERSION" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: android
+
+      - name: cargo-ndk
+        run: cargo install cargo-ndk --locked --version 3.5.4
+
+      - name: Host unit tests (Android crate)
+        run: cargo test -p photocraft-android --lib
+
+      - name: Build APK
+        run: apps/photocraft-android/build.sh
+
+      - name: Name the APK
+        id: apk
+        run: |
+          out="photocraft-android-${GITHUB_SHA::7}.apk"
+          cp apps/photocraft-android/android/app/build/outputs/apk/release/app-release.apk "$out"
+          ls -lh "$out"
+          echo "path=$out" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: photocraft-android-apk
+          path: ${{ steps.apk.outputs.path }}
+
+      - name: Publish the android-latest pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="PhotoCraft for Android, built from ${GITHUB_SHA::7} on the android branch. Early alpha: arm64 only, desktop layout in landscape. Signed with a debug key (install by allowing unknown sources)."
+          gh release delete android-latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create android-latest "${{ steps.apk.outputs.path }}" \
+            --target "$GITHUB_SHA" --prerelease --title "PhotoCraft Android (latest build)" --notes "$notes"

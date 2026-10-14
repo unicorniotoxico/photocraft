@@ -82,6 +82,14 @@ debug = "line-tables-only"
 lto = "thin"
 codegen-units = 1
 
+# The Android build (apps/photocraft-android/build.sh): release speed without LTO, so it links in
+# the few GB of RAM a laptop or a small Docker VM has; symbols stripped to keep the APK small.
+[profile.android]
+inherits = "release"
+lto = false
+codegen-units = 16
+strip = "symbols"
+
 # The browser build (apps/photocraft-web, `data-cargo-profile` in its index.html). Hosts cap the
 # size of a single file (Cloudflare Pages/Workers: 25 MiB), and the wasm is downloaded on every
 # visit, so this profile optimizes for size: fat LTO, opt-level "z" for PhotoCraft's own crates,

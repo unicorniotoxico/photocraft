@@ -1,0 +1,41 @@
+[package]
+name = "photocraft-android"
+description = "PhotoCraft on Android (eframe native activity, wgpu on Vulkan or GLES)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+# Open HEIC/HEIF photos (the optional photocraft-heif crate), as in the desktop and web apps.
+heif = ["photocraft-codecs/heif"]
+
+# The JNI bridge needs `unsafe` (raw JavaVM/activity pointers, `#[no_mangle]` entry points, and
+# adopting file descriptors handed over by Java). Like photocraft-tablet, the crate denies it and
+# only `src/jni_bridge.rs` allows it, every block with a `SAFETY:` comment.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+
+[lib]
+name = "photocraft_android"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+log = { workspace = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+photocraft-engine = { workspace = true }
+photocraft-io = { workspace = true }
+photocraft-codecs = { workspace = true }
+photocraft-doc = { workspace = true }
+photocraft-ui-egui = { workspace = true }
+egui = { workspace = true }
+eframe = { workspace = true, features = ["wgpu", "android-native-activity"] }
+# AndroidApp (the activity handle eframe runs in); pinned to the version eframe already locks.
+winit = { version = "=0.30.13", default-features = false, features = ["android-native-activity", "rwh_06"] }
+android_logger = "0.15"
+jni = "0.21"
